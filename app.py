@@ -1,170 +1,102 @@
 import os
 import pandas as pd
-import gradio as gr
-from dotenv import load_dotenv, find_dotenv
-from huggingface_hub import InferenceClient
-from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
+from dotenv import find_dotenv, load_dotenv
+from groq import Groq
 
-# ==== Setup ====
 _ = load_dotenv(find_dotenv())
-api_key = os.getenv("HF_API_TOKEN")
+api_key = os.getenv("GROQ_TOKEN")
 
-client = InferenceClient(
-    provider="hf-inference",
+client = Groq(
     api_key=api_key,
 )
 
-# ==== Embeddings e FAISS ====
-embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-dimension = 384  # Dimensão dos embeddings do modelo MiniLM
-faiss_index = faiss.IndexFlatL2(dimension)
-metadata_store = []  # Lista paralela para armazenar metadados dos vetores
-
-def embed_text(text):
-    return embedding_model.encode([text])[0]  # retorna um vetor 1D
-
-# ==== Manipulação de arquivos ====
 class FileInput:
-    def __init__(self, allowed_extensions=None):
-        self.allowed_extensions = allowed_extensions or [".xlsx"]
-        self.valid_files = []
+    def __init__(self, root_dir):
+        self.root_dir = root_dir
+        self.files = []
 
-    def is_valid_extension(self, filename):
-        return any(filename.endswith(ext) for ext in self.allowed_extensions)
+    def load_files(self):
 
-    def validate_file(self, filepath):
-        try:
-            pd.read_excel(filepath, nrows=1)
-            return True
-        except Exception as e:
-            print(f"[Error] Unable to read {filepath}: {str(e)}")
-            return False
-
-    def list_all_files_recursively(self, root_dir):
-        all_files = []
-        for dirpath, _, filenames in os.walk(root_dir):
+        for dirpath, filenames in os.walk(self.root_dir):
             for filename in filenames:
-                full_path = os.path.join(dirpath, filename)
-                all_files.append(full_path)
-        return all_files
+                if filename.endswith(".xlsx"):
+                    full_path = os.path.join(dirpath, filename)
+                    csv_content = self._read_and_convert_to_csv(full_path)
+                    if csv_content:  
+                        self.files.append(csv_content)
 
-    def index_by_row(self, df, source_name):
-        for i, row in df.iterrows():
-            pessoa = row.get("Nome", f"Linha {i}")
-            atributos = []
-            for col, val in row.items():
-                atributos.append(f"{col}: {val}")
-            text = f"Registro de {pessoa} - " + "; ".join(atributos)
-            vec = embed_text(text)
-            faiss_index.add(np.array([vec]))
-            metadata_store.append({
-                "tipo": "linha",
-                "pessoa": pessoa,
-                "fonte": source_name,
-                "conteudo": text
-            })
+    def _read_and_convert_to_csv(self, filepath):
+        try:
+            df = pd.read_excel(filepath)
+            csv_content = df.to_csv(index=False)
+            return csv_content
+        except Exception as e:
+            print(f"[Erro] Não foi possível processar o arquivo {filepath}: {e}")
+            return None
 
-    def index_numerical_stats(self, df, source_name):
-        numeric_df = df.select_dtypes(include=["number"])
-        for col in numeric_df.columns:
-            col_data = numeric_df[col].dropna()
-            if col_data.empty:
-                continue
-            stats_text = (
-                f"A coluna '{col}' na fonte '{source_name}' possui:\n"
-                f"- Média: {col_data.mean():.2f}\n"
-                f"- Máximo: {col_data.max():.2f}\n"
-                f"- Mínimo: {col_data.min():.2f}\n"
-                f"- Soma: {col_data.sum():.2f}\n"
-                f"- Total de registros: {len(col_data)}"
+    def get_files(self):
+        return self.files
+
+# class FileClassifier:
+
+
+class Agent:
+    def __init__(self, client, model="meta-llama/llama-4-scout-17b-16e-instruct", temperature=1, max_tokens=1024, top_p=1, stream=True, stop=None):
+        self.client = client
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.top_p = top_p
+        self.stream = stream
+        self.stop = stop
+
+    def create_completion(self, messages):
+        try:
+            response = ""
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_completion_tokens=self.max_tokens,
+                top_p=self.top_p,
+                stream=self.stream,
+                stop=self.stop,
             )
-            vec = embed_text(stats_text)
-            faiss_index.add(np.array([vec]))
-            metadata_store.append({
-                "tipo": "estatística",
-                "coluna": col,
-                "fonte": source_name,
-                "conteudo": stats_text
-            })
 
-    def load_files(self, input_paths):
-        files = []
+            for chunk in completion:
+                delta_content = chunk.choices[0].delta.content or ""
+                response += delta_content
+                print(delta_content, end="")  
+            return response
+        except Exception as e:
+            print(f"[Erro] Não foi possível criar a conclusão: {e}")
+            return None
 
-        if isinstance(input_paths, str) and os.path.isdir(input_paths):
-            all_files = self.list_all_files_recursively(input_paths)
-        elif isinstance(input_paths, list):
-            all_files = []
-            for path in input_paths:
-                if os.path.isdir(path):
-                    all_files.extend(self.list_all_files_recursively(path))
-                else:
-                    all_files.append(path)
-        else:
-            raise ValueError("Invalid input: provide a directory or a list of files.")
+    def generate_response_with_context(self, context, instruction):
+        messages = [
+            {"role": "system", "content": "Você é um assistente útil."},
+            {"role": "user", "content": context},
+            {"role": "user", "content": instruction},
+        ]
+        return self.create_completion(messages)
+    
+# Inicializa a classe com o diretório raiz
+file_input = FileInput("Planilhas")
 
-        for filepath in all_files:
-            if not self.is_valid_extension(filepath):
-                print(f"[Warning] Ignored (unsupported extension): {filepath}")
-                continue
-            if not os.path.exists(filepath):
-                print(f"[Warning] File not found: {filepath}")
-                continue
-            if self.validate_file(filepath):
-                try:
-                    df = pd.read_excel(filepath)
-                    csv_content = df.to_csv(index=False)
-                    files.append({
-                        "filename": os.path.basename(filepath),
-                        "content": csv_content
-                    })
+# Carrega os arquivos
+file_input.load_files()
 
-                    # Indexar por linha e estatísticas numéricas
-                    self.index_by_row(df, os.path.basename(filepath))
-                    self.index_numerical_stats(df, os.path.basename(filepath))
-                except Exception as e:
-                    print(f"[Error] Failed to process {filepath}: {str(e)}")
+# Obtém os dados
+arquivos_validos = file_input.get_files()
 
-        self.valid_files = files
-        return files
+agent = Agent(client)
 
-# ==== Carregar dados ====
-data = FileInput()
-arquivos_validos = data.load_files("Planilhas")
+# Contexto e instrução
+context = arquivos_validos[0]
+instruction = "Me dê todos os dados de adolfo moreira."
 
-# ==== Consulta ao modelo ====
-def query_model(context, question):
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": f"Context: {context}\nQuestion: {question}"}
-    ]
-    completion = client.chat.completions.create(
-        model="meta-llama/Llama-3.1-8B-Instruct",
-        messages=messages,
-    )
-    return completion.choices[0].message["content"]
+# Gera a resposta
+response = agent.generate_response_with_context(context, instruction)
 
-# ==== Função principal ====
-def responder(question):
-    try:
-        question_vec = embed_text(question)
-        D, I = faiss_index.search(np.array([question_vec]), k=5)  # top 5 matches
-        context_chunks = [metadata_store[i]["conteudo"] for i in I[0] if i < len(metadata_store)]
-        context = "\n".join(context_chunks)
-        print("Context:", context)
-        response = query_model(context, question)
-        return response
-    except Exception as e:
-        return f"[Error] {str(e)}"
-
-# ==== Interface Gradio ====
-iface = gr.Interface(
-    fn=responder,
-    inputs=gr.Textbox(lines=2, placeholder="Digite sua pergunta sobre os dados..."),
-    outputs="text",
-    title="Chat com Dados Excel usando RAG + FAISS",
-    description="Use um modelo LLM gratuito para consultar dados de planilhas (.xlsx)."
-)
-
-iface.launch()
+# Exibe a resposta
+print(response)
