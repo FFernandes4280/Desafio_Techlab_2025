@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-import io
 from dotenv import find_dotenv, load_dotenv
 from groq import Groq
 
@@ -11,12 +10,11 @@ client = Groq(
     api_key=api_key,
 )
 
-def create_context_body(csv_file):
+def create_context_body(dataframes):
     documents = []
-    for file in csv_file:
-        df = pd.read_csv(io.StringIO(file))
+    for name, df in dataframes:
         for column in df.columns:
-            column_data = f"Coluna: {column}\nDados: {df[column].dropna().tolist()}"
+            column_data = f"Arquivo: {name}\nColuna: {column}\nDados: {df[column].dropna().tolist()}"
             documents.append(column_data)
     return documents
 
@@ -30,19 +28,18 @@ class FileInput:
             for filename in filenames:
                 if filename.endswith(".xlsx"):
                     full_path = os.path.join(dirpath, filename)
-                    csv_content = self._read_and_convert_to_csv(full_path)
-                    if csv_content:
-                        self.files.append(csv_content)
-        return self.files
+                    file_name, df = self._read_excel(full_path)
+                    if df is not None:
+                        self.files.append((file_name, df))
 
-    def _read_and_convert_to_csv(self, filepath):
+    def _read_excel(self, filepath):
         try:
             df = pd.read_excel(filepath)
-            csv_content = df.to_csv(index=False)
-            return csv_content
+            file_name = os.path.splitext(os.path.basename(filepath))[0]  
+            return file_name, df
         except Exception as e:
             print(f"[Erro] Não foi possível processar o arquivo {filepath}: {e}")
-            return None
+            return None, None
 
     def get_files(self):
         return self.files
@@ -51,35 +48,22 @@ class FileClassifier:
     def __init__(self, agent, file_input):
         self.agent = agent
         self.file_input = file_input
-        self.instruction = (
-            "Sua tarefa é classificar arquivos de planilha com base nos nomes das colunas fornecidas. "
-            "Você deve escolher exatamente uma das seguintes categorias para cada planilha:\n\n"
-            "1. 'colaboradores': colunas relacionadas a pessoas e suas funções na empresa, como 'Departamento', 'Colaborador', 'Cargo', 'Salário', 'Centro de Custo', 'Matrícula'.\n"
-            "2. 'beneficios': colunas associadas a planos de saúde, vales e coparticipações, como 'Beneficiário', 'Plano', 'Coparticipação', 'Dependentes', "
-            "'Valor Parcela Assinante', 'Valor Desconto Coparticipação', 'Data de Início'.\n"
-            "3. 'ferramentas': colunas relacionadas ao uso de softwares ou licenças, como 'Ferramenta', 'Licença', 'Usuário', 'Data Ativação', 'Valor Mensal', 'Produto', 'Assinatura'.\n\n"
-            "Importante: apenas **uma única** planilha deve ser classificada como 'colaboradores'. "
-            "Todas as outras planilhas devem ser classificadas como 'beneficios', 'ferramentas' ou 'Outros'.\n\n"
-            "Se uma planilha contiver termos que aparecem em mais de uma categoria, escolha aquela cujo **conjunto de colunas predominantes for mais claramente associado**.\n"
-            "Se nenhuma categoria for adequada, retorne 'Outros'.\n\n"
-            "Retorne **apenas o nome da categoria**: 'colaboradores', 'beneficios', 'ferramentas' ou 'Outros'. "
-            "Não explique sua decisão nem inclua nenhum outro texto além da categoria."
-        )
+        self.instruction = ("...instruções da tarefa de classificação...")
         self.classified_files = []
 
     def classify_files(self):
-        for file in self.file_input:
+        for file_name, df in self.file_input:
             try:
-                header = file.split("\n")[0]
+                header = ", ".join(df.columns)
                 response = self.agent.generate_response_with_context(header, self.instruction)
                 if response:
-                    self.classified_files.append((header, response))
+                    self.classified_files.append((file_name, response))
             except Exception as e:
                 print(f"[Erro] Não foi possível classificar o arquivo: {e}")
         return self.classified_files
 
 class Agent:
-    def __init__(self, client, model="meta-llama/llama-4-scout-17b-16e-instruct", temperature=1, max_tokens=1024, top_p=1, stream=True, stop=None):
+    def __init__(self, client, model="llama-3.3-70b-versatile", temperature=1, max_tokens=1024, top_p=1, stream=True, stop=None):
         self.client = client
         self.model = model
         self.temperature = temperature
@@ -100,11 +84,9 @@ class Agent:
                 stream=self.stream,
                 stop=self.stop,
             )
-
             for chunk in completion:
                 delta_content = chunk.choices[0].delta.content or ""
                 response += delta_content
-            print(response)
             return response
         except Exception as e:
             print(f"[Erro] Não foi possível criar a conclusão: {e}")
@@ -117,32 +99,97 @@ class Agent:
         ]
         return self.create_completion(messages)
 
-class CreateTable:
+class ManageTable:
     def __init__(self, agent):
         self.agent = agent
 
     def define_columns(self, file_input):
         instruction = """
-        Você receberá um conjunto de colunas de uma ou mais planilhas. Sua tarefa é identificar e retornar **apenas as colunas relevantes e não repetidas**.
+        Sua tarefa é selecionar colunas específicas de planilhas, seguindo exatamente as regras abaixo. Respeite com rigor as instruções e não inclua colunas que não sejam explicitamente solicitadas.
 
-        Siga estas regras:
-        1. Se duas colunas tiverem nomes diferentes, mas os mesmos dados, mantenha apenas **uma** delas.
-        2. Se duas colunas tiverem o mesmo nome e os mesmos dados, mantenha apenas **uma**.
-        3. Remova colunas que sejam identificadores exclusivos, como: 'CNPJ', 'ID', 'Código', ou similares.
-        4. **Exceção**: mantenha a coluna 'CPF', mesmo que seja um identificador.
-        5. Retorne todas as colunas que não se repetem ou que contenham dados distintos, exceto os identificadores.
+        ## 1. Para arquivos do tipo 'colaboradores':
+        Selecione apenas colunas que correspondam aos seguintes campos (mesmo que com nomes diferentes ou sinônimos):
+        - Nome (ex: "Nome", "Colaborador", "Funcionário", "Empregado")
+        - CPF (ex: "CPF", "CPF do Colaborador")
+        - Departamento (ex: "Departamento", "Área", "Setor")
+        - Salário (ex: "Salário", "Remuneração", "Vencimentos", "Valor Bruto")
 
-        Retorne apenas a lista final de colunas selecionadas, sem explicações.
+        ## 2. Para arquivos do tipo 'benefício' ou 'ferramenta':
+        - Se existir uma coluna chamada ou semelhante a "Valor Total", "Valor Mensal", ou "Valor Total do Plano", selecione **somente essa**.
+        - Caso **não** exista essa coluna, selecione **apenas** colunas numéricas que representem valores monetários, como:
+        "Valor Mensal", "Valor Parcela", "Valor Desconto", "Custo", "Coparticipação", "Preço", "Parcela".
+
+        ### MUITO IMPORTANTE:
+        - **NÃO** inclua colunas como: "Assinante", "Licença", "Beneficiário", "Nome do Plano", "Copilot", ou qualquer outro campo que **não represente valor monetário**.
+        - Nunca selecione mais de uma coluna de valor se houver uma chamada "Total" ou equivalente.
+        - Se houver dúvida entre colunas de texto e de valor, **escolha somente as que claramente contêm valores numéricos em reais**.
+
+        ## Exemplo de formato esperado:
+        [
+        ("Arquivo1", ["Coluna A", "Coluna B"]),
+        ("Arquivo2", ["Coluna X"])
+        ]
+
+        Use **exatamente** os nomes dos arquivos (sem extensão) e **retorne somente a lista** nesse formato. Não inclua nenhuma explicação, título ou comentário.
         """
         documents = create_context_body(file_input)
         context = "\n\n".join(documents)
-        return self.agent.generate_response_with_context(
+        response = self.agent.generate_response_with_context(
             context=context,
             instruction=instruction,
         )
+        formatted_response = eval(response)
+        return formatted_response
 
+
+    def create_table(self, file_input, columns):
+        combined_columns = {}
+        columns_dict = dict(columns)
+
+        for filename, df in file_input:
+            try:
+                if filename in columns_dict:
+                    colunas_desejadas = columns_dict[filename]
+                    colunas_validas = [col for col in colunas_desejadas if col in df.columns]
+                    for col in colunas_validas:
+                        if col not in combined_columns:
+                            combined_columns[col] = []
+                        combined_columns[col].extend(df[col].dropna().tolist())
+            except Exception as e:
+                print(f"[Erro] Falha ao processar o arquivo {filename}: {e}")
+
+        if combined_columns:
+            result_df = pd.DataFrame(dict([(col, pd.Series(data)) for col, data in combined_columns.items()]))
+
+            column_to_file_map = {}
+            for filename, df in file_input:
+                if filename in columns_dict:
+                    colunas_desejadas = columns_dict[filename]
+                    colunas_validas = [col for col in colunas_desejadas if col in df.columns]
+                    for col in colunas_validas:
+                        if col not in columns_dict.get("Dados Colaboradores", []):
+                            column_to_file_map[col] = filename
+
+            result_df.rename(
+                columns=lambda col: f"{column_to_file_map[col]}" if col in column_to_file_map else col,
+                inplace=True
+            )
+
+            result_df['Total'] = result_df.select_dtypes(include='number').sum(axis=1)
+
+            output_path = "result.xlsx"
+            result_df.to_excel(output_path, index=False)
+            return output_path
+        else:
+            print("[Aviso] Nenhum dado correspondente foi encontrado.")
+            return None
+    
 file_input = FileInput("Planilhas")
-arquivos = file_input.load_files()
+file_input.load_files()
+arquivos = file_input.get_files()
+
 agent = Agent(client)
-create_table = CreateTable(agent)
-create_table.define_columns(arquivos)
+create_table = ManageTable(agent)
+columns = create_table.define_columns(arquivos)
+
+create_table.create_table(arquivos, columns)
