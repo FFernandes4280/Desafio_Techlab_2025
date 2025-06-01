@@ -156,35 +156,39 @@ if __name__ == "__main__":
     It is **guaranteed** that the name column, employee document column and the monthly spent column will always be present in the provided list of column names, although their current names will vary.
     """
     
-    normalizePrompt = """
+    normalizeCPFPrompt = """
     You are a highly skilled Data Standardization Specialist. Your critical mission is to ensure the provided DataFrame
-    adheres to strict formatting standards for key columns. Assume the DataFrame's columns are already correctly named ('CPF', 'Nome', and '{LAST_COLUMN}').
+    adheres to strict formatting standards for key columns. Assume the DataFrame's columns are already correctly named
+    ('CPF', 'Nome', and '{LAST_COLUMN}').
 
-    **Task 1: Standardize 'CPF' Column**
+    **Standardize 'CPF' Column**
 
     **Target CPF Format:**
-    The 'CPF' column must be a string formatted precisely as `'XXX.XXX.XXX-DD'`, where 'X' and 'D' represent a single digit
+    The 'CPF' column must be a string formatted precisely as `'NNN.NNN.NNN-XX'`, where 'N' represent a single digit and 'X' is always the letter 'X'.
     from 0 to 9. This means it should always have 11 digits, with dots after the 3rd and 6th digits, and a hyphen before the
     last two digits.
-
-    **Task 2: Normalize the {LAST_COLUMN}**
-
-    **Target {LAST_COLUMN} Format:**
-    The **{LAST_COLUMN}** of the DataFrame must be formatted as a **numeric value only**. This means:
-
-    1.  Any currency symbols (e.g., 'R$', '$') must be removed.
-    2.  Any **thousands separators** (e.g., commas ',') must be removed.
-    3.  The column must then be converted to a suitable numeric data type (e.g., float).
-
+    
     **Action:**
     You must normalize the data within the rows from index {i} to {j} (inclusive). For each of these rows,
-    generate a dictionary that includes **ALL** columns present in the 'Columns' list below. For 'CPF' and
-    '{LAST_COLUMN}', apply the specified target formats. For all other columns (like 'Nome'), their values should be included **as they are** from the original 'Must normalize the rows' data.
+    generate a dictionary for 'CPF' applying the specified target format. 
 
     Columns: {COLUMN_NAMES_LIST}
     Must normalize the rows {i} to {j}: {MUST_NORMALIZE}
 
     """
+
+    # normalizeValuePrompt = """
+    # **Standardization '{LAST_COLUMN}' Column**
+
+    # **Target {LAST_COLUMN} Format:**
+    # The **'{LAST_COLUMN}'** column must be a **numeric value only (float)**.
+    # This means:
+    # 1.  Any currency symbols (e.g., 'R$', '$') must be removed.
+    # 2.  Any thousands separators (e.g., commas ',') must be removed.
+    # 3.  The value must be a raw number in the JSON (e.g., `1234.56`, not `"1234,56"` or `"R$1.234,56"`).
+    # 4.  It must then be convertible to a suitable numeric data type (e.g., float).
+
+    # """
     
     for file in file_paths:
         df = pd.read_excel(file)
@@ -194,19 +198,47 @@ if __name__ == "__main__":
         sheetName = file.split("/")[-1].split("-")[-1].replace(".xlsx", "")
         dfs[sheetName] = df  
 
-    for file_name, df in dfs.items():
-        new_df = run_agent(renamePrompt.format(COLUMN_NAMES_LIST=list(df.columns), FILE_NAME=file_name), df)
+    for file_name, df_to_process in dfs.items(): 
+        # Step 1: Standardize column names for the current file's DataFrame
+        new_df = run_agent(renamePrompt.format(COLUMN_NAMES_LIST=list(df_to_process.columns), FILE_NAME=file_name), df_to_process)
+        
+        print(f"\n--- Starting Normalization for '{file_name}' ---")
+        
+        # Step 2: Normalize data in batches for new_df
+        current_i = 0
+        batch_size = 5 
+        
+        while current_i < len(new_df):
+            current_j = min(current_i + batch_size, len(new_df)) 
+            
+            current_batch_df = new_df.iloc[current_i:current_j]
+            num_rows_in_batch = len(current_batch_df)
 
-        i = 0
-        for j in range(5, len(new_df), 5):
-            normalized_df = run_agent(normalizePrompt.format(LAST_COLUMN=new_df.columns[-1], MUST_NORMALIZE=new_df.iloc[i:j], i=i, j=j-1, COLUMN_NAMES_LIST=list(new_df.columns)), new_df)
-            i = j                                                                                                  
-        OUTPUT_DATA_FRAME = pd.merge(OUTPUT_DATA_FRAME, normalized_df, on=['Nome', 'CPF'], how='left')
+            if num_rows_in_batch == 0:
+                break 
+            
+            normalized_df_result_of_batch = run_agent(
+                normalizeCPFPrompt.format(
+                    LAST_COLUMN=new_df.columns[-1],
+                    MUST_NORMALIZE=current_batch_df, 
+                    i=current_i,
+                    j=current_j-1, 
+                    COLUMN_NAMES_LIST=list(new_df.columns),
+                    num_rows_in_batch=num_rows_in_batch 
+                ),
+                new_df 
+            )
+            
+            # Update current_i for the next batch
+            new_df = normalized_df_result_of_batch
+            current_i = current_j
+            
+        new_df.to_excel('debug'+file_name+'.xlsx', index=False)
+        OUTPUT_DATA_FRAME = pd.merge(OUTPUT_DATA_FRAME, new_df, on=['Nome', 'CPF'], how='left')
         print(f"Merged file: {file_name}")
-        break
 
 
+    # Final calculation and save after all files are processed and merged
     OUTPUT_DATA_FRAME['Total'] = OUTPUT_DATA_FRAME.select_dtypes(include='number').sum(axis=1)
     OUTPUT_DATA_FRAME.to_excel(OUTPUT_PATH, index=False)
-
 
