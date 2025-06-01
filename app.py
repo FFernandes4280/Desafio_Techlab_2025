@@ -7,6 +7,13 @@ from tools.load_files import load_file_paths
 from tools.standardize_files import standardize_column_names
 from tools.normalize_df import normalize_df
 
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document 
+from langchain.chains import ConversationalRetrievalChain
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_groq import ChatGroq
+
 # --- Environment Setup ---
 _ = load_dotenv(find_dotenv())
 
@@ -135,7 +142,44 @@ def run_agent(userPrompt, df):
             df = function_to_call.invoke(function_args)  
 
         return df  
-    
+
+def get_embedding_model():
+    model_name = "sentence-transformers/all-MiniLM-L6-v2"
+    model_kwargs = {'device': 'cpu'} 
+    encode_kwargs = {'normalize_embeddings': False} 
+
+    embedding_model = HuggingFaceEmbeddings(
+        model_name=model_name,
+        model_kwargs=model_kwargs,
+        encode_kwargs=encode_kwargs
+    )
+    return embedding_model
+
+def create_retriever_from_excel(file_path: str):
+    df = pd.read_excel(file_path)
+
+    documents = []
+    for index, row in df.iterrows():
+
+        content = f"Funcionário: {row['Nome']}, CPF: {row['CPF']}"
+        
+        for col in df.columns:
+            if col not in ['Nome', 'CPF']: 
+                content += f", {col}: {row[col]}"
+        
+        # You can also store metadata that might be useful for filtering later
+        metadata = row.to_dict() # Store the entire row as metadata
+        
+        documents.append(Document(page_content=content, metadata=metadata))
+
+    embeddings = get_embedding_model()
+
+    print("Creating vector store for result.xlsx...")
+    vectorstore = FAISS.from_documents(documents, embeddings)
+    print("Vector store created.")
+
+    return vectorstore.as_retriever()
+  
 if __name__ == "__main__":
     file_paths = load_file_paths.invoke({"directory": ROOT_DIR})
     dfs = dict()
@@ -164,31 +208,27 @@ if __name__ == "__main__":
     **Standardize 'CPF' Column**
 
     **Target CPF Format:**
-    The 'CPF' column must be a string formatted precisely as `'NNN.NNN.NNN-XX'`, where 'N' represent a single digit and 'X' is always the letter 'X'.
-    from 0 to 9. This means it should always have 11 digits, with dots after the 3rd and 6th digits, and a hyphen before the
-    last two digits.
-    
+    The 'CPF' column must be a string formatted precisely as `'DDD.DDD.DDD-XX'`.
+    Here's what each part means:
+    * 'D' represents a single **digit from 0 to 9**.
+    * 'X' represents the **literal uppercase letter 'X'**.
+    * The CPF must always have exactly **11 characters (9 digits + 2 'X's)**.
+    * It must include **dots** after the 3rd and 6th digits.
+    * It must include a **hyphen** before the last two 'X's.
+    * **Crucial Rule:** If the original last two characters are numeric or any other placeholder (e.g., '01', 'AB'), they **MUST be replaced with 'XX'**.
+
+    **Example:**
+    * `'12345678901'` becomes `'123.456.789-XX'`
+    * `'987.654.321-AB'` becomes `'987.654.321-XX'`
+    * `'001.002.003-XX'` remains `'001.002.003-XX'`
+
     **Action:**
     You must normalize the data within the rows from index {i} to {j} (inclusive). For each of these rows,
-    generate a dictionary for 'CPF' applying the specified target format. 
+    generate a dictionary for 'CPF' applying the specified target format.
 
     Columns: {COLUMN_NAMES_LIST}
     Must normalize the rows {i} to {j}: {MUST_NORMALIZE}
-
     """
-
-    # normalizeValuePrompt = """
-    # **Standardization '{LAST_COLUMN}' Column**
-
-    # **Target {LAST_COLUMN} Format:**
-    # The **'{LAST_COLUMN}'** column must be a **numeric value only (float)**.
-    # This means:
-    # 1.  Any currency symbols (e.g., 'R$', '$') must be removed.
-    # 2.  Any thousands separators (e.g., commas ',') must be removed.
-    # 3.  The value must be a raw number in the JSON (e.g., `1234.56`, not `"1234,56"` or `"R$1.234,56"`).
-    # 4.  It must then be convertible to a suitable numeric data type (e.g., float).
-
-    # """
     
     for file in file_paths:
         df = pd.read_excel(file)
@@ -242,3 +282,50 @@ if __name__ == "__main__":
     OUTPUT_DATA_FRAME['Total'] = OUTPUT_DATA_FRAME.select_dtypes(include='number').sum(axis=1)
     OUTPUT_DATA_FRAME.to_excel(OUTPUT_PATH, index=False)
 
+    # print("\n--- Iniciando Chatbot ---")
+    
+    # retriever = create_retriever_from_excel(OUTPUT_PATH)
+
+    # if retriever:
+    #     # Define the LLM for the chatbot
+    #     llm = ChatGroq(temperature=0.0, model_name="llama3-8b-8192", groq_api_key=_)
+
+    #     # Define the prompt for the conversational retrieval chain
+    #     template = """Você é um assistente útil que responde a perguntas sobre dados de funcionários com base no contexto fornecido.
+    #     Se você não souber a resposta, apenas diga que não sabe, não tente inventar uma resposta.
+    #     Responda em Português.
+
+    #     Contexto: {context}
+
+    #     Pergunta: {question}"""
+
+    #     prompt = ChatPromptTemplate.from_template(template)
+
+    #     # Create the ConversationalRetrievalChain
+    #     qa_chain = ConversationalRetrievalChain.from_llm(
+    #         llm,
+    #         retriever,
+    #         chain_type="stuff",
+    #         verbose=False, # Set to True for more detailed output during execution
+    #         return_source_documents=True,
+    #         combine_docs_chain_kwargs={"prompt": prompt}
+    #     )
+
+    #     print("Chatbot iniciado. Faça perguntas sobre os dados (digite 'sair' para encerrar).")
+    #     chat_history = []
+
+    #     while True:
+    #         user_query = input("Você: ")
+    #         if user_query.lower() == 'sair':
+    #             print("Até logo!")
+    #             break
+
+    #         try:
+    #             result = qa_chain.invoke({"question": user_query, "chat_history": chat_history})
+    #             print(f"Bot: {result['answer']}")
+    #             chat_history.append((user_query, result['answer']))
+    #         except Exception as e:
+    #             print(f"Ocorreu um erro ao processar sua pergunta: {e}")
+    #             print("Por favor, tente novamente.")
+    # else:
+    #     print("Não foi possível iniciar o chatbot devido a um erro na criação do índice vetorial.")
