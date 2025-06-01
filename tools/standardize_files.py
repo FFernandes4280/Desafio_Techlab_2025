@@ -16,6 +16,9 @@ def standardize_column_names(columns_to_rename: list[dict], df: pd.DataFrame) ->
     Returns:
         pd.DataFrame: The updated DataFrame containing only the renamed columns.
     """
+    if {'CPF', 'Nome'}.issubset(df.columns) and len(df.columns) == 3: 
+        return df
+
     renamed_columns = {}
 
     for column in columns_to_rename:
