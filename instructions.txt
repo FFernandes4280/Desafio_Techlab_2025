@@ -1,20 +1,17 @@
-O llm que deve me falar qual coluna eu quero
-
-O agent deve identificar quais colunas eu vou usar
-
 O agent que deve padronizar a planilha
 
-Passar colunas relevantes para o LLM, passar planilha uma por vez
-
 Step 3.5 Normalizar os dados das colunas, passar exemplo dos dados com head pra ver se precisa ai sim chamar a tool
-
-já salvar o dataframe final
 
 Usar RAG pra buscar dados na planilha final sem precisar acessa-la
 
 Read me é para citar a ideia de cada etapa e não citar trechos do código
 
 Gravar video do codigo executando 60 <
+
+tudo normalizado, então agora podemos consolidar os dados, tudo usando os dados
+
+chamo o agent para normalizar os dados 
+
 
 
 

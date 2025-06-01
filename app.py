@@ -4,10 +4,7 @@ from dotenv import find_dotenv, load_dotenv
 from groq import Groq
 
 from tools.load_files import load_file_paths
-from tools.classify_files import get_file_classification
-from tools.get_relevant_columns import extract_and_append_data
-from tools.standardize_files import standardize_column_names_by_content_comparison
-from tools.consolidate_files import consolidate_data_and_generate_report
+from tools.standardize_files import standardize_column_names
 
 # --- Environment Setup ---
 _ = load_dotenv(find_dotenv())
@@ -15,137 +12,63 @@ _ = load_dotenv(find_dotenv())
 # --- Global Variables
 ROOT_DIR = "Planilhas"
 OUTPUT_PATH = "result.xlsx"
-OUTPUT_DATA_FRAME = pd.DataFrame()
+OUTPUT_DATA_FRAME = pd.read_excel("Planilhas/Dados Colaboradores.xlsx")
 
-def run_agent(user_prompt):
+def run_agent(userPrompt, df):
+    global OUTPUT_DATA_FRAME  
+
     client = Groq()
-    # Inicializa a conversa com mensagens do sistema e do usuário
     messages = [
         {
-            "role": "system",
-            "content": """You are a specialized automation agent. Your exclusive task is to 
-            determine and execute the exact tool calls necessary to fulfill the user's request.
-            **You must not generate any conversational text, greetings, summaries, or explanations.** 
-            Respond solely with the appropriate tool calls or, if no tool is applicable or the task is complete, 
-            indicate completion directly without additional prose."""
-        },
-        {
             "role": "user",
-            "content": user_prompt,
+            "content": userPrompt
         }
     ]
 
-    # Define as tools disponíveis
     tools = [
         {
             "type": "function",
             "function": {
-                "name": "load_file_paths",
-                "description": "Scan a directory for .xlsx files and return their paths.",
+                "name": "standardize_column_names",
+                "description": "Will receive the list of important column names and the names they should be standardized to.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "directory": {
-                            "type": "string",
-                            "description": "The directory to scan for .xlsx files.",
-                        }
-                    },
-                    "required": ["directory"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_file_classification",
-                "description": "Classify a file as 'employee', 'tool', or 'benefit' based on its content or name.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "The path to the file to classify.",
-                        }
-                    },
-                    "required": ["file_path"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "extract_and_append_data",
-                "description": "Extract relevant columns from a file based on its classification and append to the output DataFrame.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "The path to the file to process.",
-                        },
-                        "file_classification": {
-                            "type": "string",
-                            "description": "The classification of the file (e.g., 'employee', 'tool', 'benefit').",
-                        }
-                    },
-                    "required": ["file_path", "file_classification"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "standardize_column_names_by_content_comparison",
-                "description": "Standardize column names of DataFrames by comparing them with a master DataFrame.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "classified_files": {
-                            "type": "object",
-                            "description": "A dictionary of file paths and their classifications.",
-                        }
-                    },
-                    "required": ["classified_files"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "consolidate_data_and_generate_report",
-                "description": "Consolidate standardized DataFrames into a single report.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "standardized_files": {
-                            "type": "array",
+                        "columns_to_rename": {
+                            "type": "array", 
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "path": {"type": "string"},
-                                    "classification": {"type": "string"},
-                                    "dataframe": {"type": "object"},
+                                    "current_name": {
+                                        "type": "string",
+                                        "description": "The current column name in the DataFrame."
+                                    },
+                                    "standardized_name": {
+                                        "type": "string",
+                                        "description": "The standardized column name to rename to."
+                                    }
                                 },
+                                "required": ["current_name", "standardized_name"]
                             },
-                            "description": "A list of tuples containing file paths, classifications, and DataFrames.",
+                            "description": "A list of dictionaries where each dictionary maps a current column name to its standardized name.",
                         }
                     },
-                    "required": ["standardized_files"],
+                    "required": ["columns_to_rename"],
                 },
             },
-        },
+        }
     ]
 
     # Faz a chamada inicial para o modelo
     response = client.chat.completions.create(
         model="meta-llama/llama-4-scout-17b-16e-instruct",  
-        messages=messages,  # Histórico da conversa
+        messages=messages,  
         stream=False,
-        tools=tools,  # Tools disponíveis
-        tool_choice="auto",  # Permite ao modelo decidir qual tool usar
-        max_completion_tokens=4096,  # Limite de tokens
+        tools=tools,  
+        tool_choice="auto", 
+        max_completion_tokens=4096,  
     )
-
+    
     # Extrai a resposta e as chamadas de tools
     response_message = response.choices[0].message
     tool_calls = response_message.tool_calls
@@ -153,60 +76,62 @@ def run_agent(user_prompt):
     if tool_calls:
         # Define as funções disponíveis para serem chamadas
         available_functions = {
-            "load_file_paths": load_file_paths,
-            "get_file_classification": get_file_classification,
-            "extract_and_append_data": extract_and_append_data,
-            "standardize_column_names_by_content_comparison": standardize_column_names_by_content_comparison,
-            "consolidate_data_and_generate_report": consolidate_data_and_generate_report,
+            "standardize_column_names": standardize_column_names,
         }
 
-        # Adiciona a resposta do modelo à conversa
         messages.append(response_message)
-
-        # Processa cada chamada de tool
+        # print(tool_calls)
         for tool_call in tool_calls:
             function_name = tool_call.function.name
             function_to_call = available_functions[function_name]
             function_args = json.loads(tool_call.function.arguments)
 
-            # Chama a tool usando invoke e obtém a resposta
-            function_response = function_to_call.invoke(function_args)
+            # Add the DataFrame to the tool arguments
+            if function_name == "standardize_column_names":
+                function_args["df"] = df
 
-            # Adiciona a resposta da tool à conversa
-            messages.append(
-                {
-                    "tool_call_id": tool_call.id,
-                    "role": "tool",
-                    "name": function_name,
-                    "content": str(function_response),
-                }
-            )
+            df = function_to_call.invoke(function_args)  
 
-        # Faz uma segunda chamada ao modelo com a conversa atualizada
-        second_response = client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
-            messages=messages,
-        )
-
-        # Retorna a resposta final
-        return second_response.choices[0].message.content
-
-    # Retorna a resposta inicial se nenhuma tool foi chamada
-    return response_message.content
-
+        return df  
+    
 if __name__ == "__main__":
     file_paths = load_file_paths.invoke({"directory": ROOT_DIR})
+    dfs = dict()
 
+    renamePrompt = """
+    You are a Data Standardization Specialist. Your primary responsibility is to identify and standardize key column names within a DataFrame,
+    based solely on the provided list of existing column names.
+
+    Given the following list of column names from a DataFrame:
+    {COLUMN_NAMES_LIST}
+
+    Your task is to precisely identify three critical columns from this list:
+
+    1.  **Employee Document Column**: Identify the column name that represents the employee's unique identifier (e.g., 'CPF', 'Documento Funcionario', 'Employee ID'). You **must** indicate that this column should be renamed to **'CPF'**.
+    2.  **Monthly Spent Column**: Identify the column name that represents the total monthly cost or expenditure (e.g., 'Custo Mensal', 'Valor Mensal', 'Total Gasto', 'Gastos', 'Monthly Cost'). You **must** indicate that this column should be renamed to **{FILE_NAME}**.
+    3.  **Name Column**: Identify the column name that contains the employee's name (e.g., 'Nome', 'Employee Name', 'Colaborador'). You **must** indicate that this column should be renamed to **'Nome'**.
+
+    It is **guaranteed** that the name column, employee document column and the monthly spent column will always be present in the provided list of column names, although their current names will vary.
+    """
+    
+    normalizePrompt = """
+
+    """
     for file in file_paths:
-        user_prompt = f"""
-        Please process the file: {file}.
-        **Important**: When referring to or passing file paths to tools, **do not modify them in any way, including removing spaces or special characters**. The file paths must be used exactly as provided.
+        df = pd.read_excel(file)
+        
+        if list(df.columns) == list(OUTPUT_DATA_FRAME.columns):
+            continue  
+        sheetName = file.split("/")[-1].split("-")[-1].replace(".xlsx", "")
+        dfs[sheetName] = df  
 
-        Follow these steps:
-        1.  **Classification**: Determine the primary category or type of data within the file.
-        2. **Get relevant columns**: Identify the relevant columns in the file that are necessary for further processing.
-        """
-        print(run_agent(user_prompt))
-        print(OUTPUT_DATA_FRAME)
+    for file_name, df in dfs.items():
+        new_df = run_agent(renamePrompt.format(COLUMN_NAMES_LIST=list(df.columns), FILE_NAME=file_name), df)
+        normalized_df = new_df
+
+        OUTPUT_DATA_FRAME = pd.merge(OUTPUT_DATA_FRAME, normalized_df, on=['Nome', 'CPF'], how='left')
+
+    OUTPUT_DATA_FRAME['Total'] = OUTPUT_DATA_FRAME.select_dtypes(include='number').sum(axis=1)
+    OUTPUT_DATA_FRAME.to_excel(OUTPUT_PATH, index=False)
 
 
