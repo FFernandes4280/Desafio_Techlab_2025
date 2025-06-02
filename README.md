@@ -59,8 +59,14 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 **Solução**:
 
 - Implementação de uma função para reformatar todos os CPFs no padrão `DDD.DDD.DDD-DD`.
+- E valores monetários para um formato numérico limpo (float), removendo símbolos de moeda (ex: 'R$', '$') e separadores de milhar (ex: vírgulas).
 - A chamada da função de normalização é feita pelo agente (LLM) como uma `tool`, guiado por um prompt que especifica o formato exato esperado.
 - Isso evita duplicações e falhas na mesclagem dos dados.
+
+**Observação**:
+- Durante o desenvolvimento, a normalização de valores totais complexos de cada ferramenta (que exigiria um raciocínio mais aprofundado do LLM sobre cálculos e contextos cruzados) foi testada. No entanto, o modelo se mostrou com dificuldade em 
+  aplicar essa instrução complexa de forma consistente, a menos que o tamanho do lote fosse reduzido a 1. Dada a trade-off entre performance (token/chamadas) e a complexidade da instrução, esse tipo de normalização mais avançada não foi incluído 
+  na versão final para garantir a robustez e eficiência do sistema atual.
 
 ---
 
@@ -150,4 +156,11 @@ python app.py
 ```
 
 🎥 [Clique aqui para ver o vídeo de demonstração](ExemploDeUso.mp4)
+
+# 🤝 Contribuições
+Contribuições são muito bem-vindas! Se você tiver sugestões de melhorias, encontrar bugs ou quiser adicionar novas funcionalidades, sinta-se à vontade para:
+
+1 - Abrir uma Issue descrevendo sua ideia ou problema.
+
+2 - Criar um Pull Request com suas alterações.
 
