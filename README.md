@@ -45,7 +45,7 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 
 **Solução**:
 
-- Inicialmente foi desenvolvida uma função padrão para receber um nome atual e um nome que deve ser alterado, posteriormente foi criado um prompt e uma tool description para que o llm fosse capaz de chamar essa tool por conta propria com os parâmetros corretos.
+- Inicialmente foi desenvolvida uma função padrão para receber um nome atual e um nome que deve ser alterado, posteriormente foi criado um prompt e uma tool description para que o LLM fosse capaz de chamar essa tool por conta propria com os parâmetros corretos.
 - A LLaMA 4 utiliza essa função via `@tool`, escolhendo os nomes corretos com base em um **prompt que define equivalências** (ex: "Documento" → "CPF").
 - Essa lógica garante consistência na estrutura final dos dados.
 
