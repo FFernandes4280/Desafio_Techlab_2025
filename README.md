@@ -118,8 +118,8 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 ### 2. Instalação
 
 ```bash
-git clone [LINK_DO_REPO]
-cd [PASTA_PROJETO]
+git clone https://github.com/FFernandes4280/Desafio_Techlab_2025.git
+cd Desafio_Techlab_2025
 ```
 Crie o arquivo .env com a sua chave da GROQ:
 GROQ_API_KEY="SUA_CHAVE_API_DA_GROQ_AQUI"
