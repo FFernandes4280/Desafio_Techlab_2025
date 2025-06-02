@@ -46,7 +46,7 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 **Solução**:
 
 - Uma função Python recebe o nome atual e o nome padronizado da coluna.
-- A LLaMA 4 utiliza essa função via `@tool`, escolhendo os nomes corretos com base em um **prompt que define equivalências** (ex: "Documento", "Assinante" → "CPF").
+- A LLaMA 4 utiliza essa função via `@tool`, escolhendo os nomes corretos com base em um **prompt que define equivalências** (ex: "Documento" → "CPF").
 - Essa lógica garante consistência na estrutura final dos dados.
 
 ---
