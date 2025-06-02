@@ -45,10 +45,11 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 
 **Solução**:
 
-- Uma função Python recebe o nome atual e o nome padronizado da coluna.
+- Inicialmente foi desenvolvida uma função padrão para receber um nome atual e um nome que deve ser alterado, posteriormente foi criado um prompt e uma tool description para que o llm fosse capaz de chamar essa tool por conta propria com os parâmetros corretos.
 - A LLaMA 4 utiliza essa função via `@tool`, escolhendo os nomes corretos com base em um **prompt que define equivalências** (ex: "Documento" → "CPF").
 - Essa lógica garante consistência na estrutura final dos dados.
 
+- 
 ---
 
 ### 🔠 4. Normalização de Dados-Chave
