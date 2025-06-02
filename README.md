@@ -35,7 +35,7 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 **Solução**:
 
 - Criação de uma ferramenta para escanear todos os arquivos `.xlsx` em diretórios e subpastas usando `os.walk`.
-- A leitura é feita de forma manual e sequencial, permitindo que o LLM processe um `DataFrame` por vez — garantindo maior controle e precisão na análise.
+- A leitura é feita de forma manual e sequencial, permitindo que o agente (LLM) processe um DataFrame por vez, garantindo maior controle e precisão nas próximas etapas.
 
 ---
 
@@ -45,7 +45,8 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 
 **Solução**:
 
-- Inicialmente foi desenvolvida uma função padrão para receber um nome atual e um nome que deve ser alterado, posteriormente foi criado um prompt e uma tool description para que o LLM fosse capaz de chamar essa tool por conta propria com os parâmetros corretos.
+- Inicialmente, foi desenvolvida uma função Python padrão capaz de receber um nome de coluna atual e o nome padronizado desejado para a alteração. Essa etapa permitia a padronização de forma manual.
+- Posteriormente, o projeto evoluiu para integrar a autonomia do agente (LLM).
 - A LLaMA 4 utiliza essa `@tool`, escolhendo os nomes corretos com base em um **prompt que define equivalências** (ex: "Documento" → "CPF").
 - Essa lógica garante consistência na estrutura final dos dados.
 
@@ -58,7 +59,7 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 **Solução**:
 
 - Implementação de uma função para reformatar todos os CPFs no padrão `DDD.DDD.DDD-DD`.
-- A chamada é feita pelo LLM como uma `tool`, por meio de um prompt que fornece o formato correto esperado.
+- A chamada da função de normalização é feita pelo agente (LLM) como uma `tool`, guiado por um prompt que especifica o formato exato esperado.
 - Isso evita duplicações e falhas na mesclagem dos dados.
 
 ---
@@ -71,7 +72,7 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 
 - Divisão dos dados em **batches menores**, garantindo que cada fatia caso o DataFrame seja muito grande não ultrapasse o limite de tokens ou por meio da redução do tamanho da batch,
   os resultados sejam mais precisos.
-- Cada lote muda gradualmente o DataFrame que será mesclado no final.
+- Cada lote processado atualiza progressivamente o DataFrame principal, que será mesclado ao final.
 
 ---
 
