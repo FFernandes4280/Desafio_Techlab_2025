@@ -2,12 +2,13 @@ import pandas as pd
 import json
 from dotenv import find_dotenv, load_dotenv
 from groq import Groq
+import os
 
 from tools.load_files import load_file_paths
 from tools.standardize_files import standardize_column_names
 from tools.normalize_df import normalize_df
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document 
 from langchain.chains import ConversationalRetrievalChain
@@ -167,8 +168,7 @@ def create_retriever_from_excel(file_path: str):
             if col not in ['Nome', 'CPF']: 
                 content += f", {col}: {row[col]}"
         
-        # You can also store metadata that might be useful for filtering later
-        metadata = row.to_dict() # Store the entire row as metadata
+        metadata = row.to_dict()
         
         documents.append(Document(page_content=content, metadata=metadata))
 
@@ -282,50 +282,47 @@ if __name__ == "__main__":
     OUTPUT_DATA_FRAME['Total'] = OUTPUT_DATA_FRAME.select_dtypes(include='number').sum(axis=1)
     OUTPUT_DATA_FRAME.to_excel(OUTPUT_PATH, index=False)
 
-    # print("\n--- Iniciando Chatbot ---")
+    print("\n--- Iniciando Chatbot ---")
     
-    # retriever = create_retriever_from_excel(OUTPUT_PATH)
+    retriever = create_retriever_from_excel(OUTPUT_PATH)
 
-    # if retriever:
-    #     # Define the LLM for the chatbot
-    #     llm = ChatGroq(temperature=0.0, model_name="llama3-8b-8192", groq_api_key=_)
+    # Define the LLM for the chatbot
+    llm = ChatGroq(temperature=0.0, model_name="llama3-8b-8192", groq_api_key=os.environ.get("GROQ_API_KEY"))
 
-    #     # Define the prompt for the conversational retrieval chain
-    #     template = """Você é um assistente útil que responde a perguntas sobre dados de funcionários com base no contexto fornecido.
-    #     Se você não souber a resposta, apenas diga que não sabe, não tente inventar uma resposta.
-    #     Responda em Português.
+    # Define the prompt for the conversational retrieval chain
+    template = """Você é um assistente útil que responde a perguntas sobre dados de funcionários com base no contexto fornecido.
+    Se você não souber a resposta, apenas diga que não sabe, não tente inventar uma resposta.
+    Responda em Português.
 
-    #     Contexto: {context}
+    Contexto: {context}
 
-    #     Pergunta: {question}"""
+    Pergunta: {question}"""
 
-    #     prompt = ChatPromptTemplate.from_template(template)
+    prompt = ChatPromptTemplate.from_template(template)
 
-    #     # Create the ConversationalRetrievalChain
-    #     qa_chain = ConversationalRetrievalChain.from_llm(
-    #         llm,
-    #         retriever,
-    #         chain_type="stuff",
-    #         verbose=False, # Set to True for more detailed output during execution
-    #         return_source_documents=True,
-    #         combine_docs_chain_kwargs={"prompt": prompt}
-    #     )
+    qa_chain = ConversationalRetrievalChain.from_llm(
+        llm,
+        retriever,
+        chain_type="stuff",
+        verbose=False, 
+        return_source_documents=True,
+        combine_docs_chain_kwargs={"prompt": prompt}
+    )
 
-    #     print("Chatbot iniciado. Faça perguntas sobre os dados (digite 'sair' para encerrar).")
-    #     chat_history = []
+    print("Chatbot iniciado. Faça perguntas sobre os dados (digite 'sair' para encerrar).")
+    chat_history = []
 
-    #     while True:
-    #         user_query = input("Você: ")
-    #         if user_query.lower() == 'sair':
-    #             print("Até logo!")
-    #             break
+    while True:
+        user_query = input("Você: ")
+        if user_query.lower() == 'sair':
+            print("Até logo!")
+            break
 
-    #         try:
-    #             result = qa_chain.invoke({"question": user_query, "chat_history": chat_history})
-    #             print(f"Bot: {result['answer']}")
-    #             chat_history.append((user_query, result['answer']))
-    #         except Exception as e:
-    #             print(f"Ocorreu um erro ao processar sua pergunta: {e}")
-    #             print("Por favor, tente novamente.")
-    # else:
-    #     print("Não foi possível iniciar o chatbot devido a um erro na criação do índice vetorial.")
+        try:
+            result = qa_chain.invoke({"question": user_query, "chat_history": chat_history})
+            print(f"Bot: {result['answer']}")
+            chat_history.append((user_query, result['answer']))
+        except Exception as e:
+            print(f"Ocorreu um erro ao processar sua pergunta: {e}")
+            print("Por favor, tente novamente.")
+
