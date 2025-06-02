@@ -16,11 +16,11 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 
 ### 🔧 1. Orquestração Inteligente de LLMs e Tools
 
-**Desafio**: Ensinar um modelo de linguagem (LLM) a **selecionar e acionar ferramentas Python externas** de maneira autônoma, com decisões contextuais sobre qual usar e quando.
+**Desafio**: Usar um modelo de linguagem (LLM) para **selecionar e acionar ferramentas Python externas** de maneira autônoma, com decisões contextuais sobre qual usar e quando.
 
 **Solução**:
 
-- Foram criadas ferramentas (`@tool` via LangChain) específicas para manipulação de `DataFrames`, como: renomear colunas, padronizar CPFs e mesclar arquivos.
+- Foram criadas ferramentas (`@tool` via LangChain) específicas para manipulação de `DataFrames`, como: ler arquivos, renomear colunas e padronizar CPFs.
 - A **LLaMA 4 (llama-4-scout-17b-16e-instruct)** foi utilizada por sua capacidade de **compreensão contextual avançada**, sendo a responsável por tomar decisões complexas, encadear chamadas de ferramentas e lidar com fluxos longos de raciocínio.
 - O modelo é guiado por **prompts otimizados**, que descrevem o funcionamento e o objetivo de cada ferramenta, permitindo que ele forneça argumentos corretos mesmo em chamadas compostas.
 
@@ -41,15 +41,14 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 
 ### 📑 3. Padronização de Nomes de Colunas
 
-**Desafio**: Unificar colunas com nomes diferentes que representam a mesma informação.
+**Desafio**: Padronizar colunas com nomes diferentes que representam a mesma informação.
 
 **Solução**:
 
 - Inicialmente foi desenvolvida uma função padrão para receber um nome atual e um nome que deve ser alterado, posteriormente foi criado um prompt e uma tool description para que o LLM fosse capaz de chamar essa tool por conta propria com os parâmetros corretos.
-- A LLaMA 4 utiliza essa função via `@tool`, escolhendo os nomes corretos com base em um **prompt que define equivalências** (ex: "Documento" → "CPF").
+- A LLaMA 4 utiliza essa `@tool`, escolhendo os nomes corretos com base em um **prompt que define equivalências** (ex: "Documento" → "CPF").
 - Essa lógica garante consistência na estrutura final dos dados.
 
-- 
 ---
 
 ### 🔠 4. Normalização de Dados-Chave
@@ -59,7 +58,7 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 **Solução**:
 
 - Implementação de uma função para reformatar todos os CPFs no padrão `DDD.DDD.DDD-DD`.
-- A chamada é feita pelo LLM como uma `tool`, baseada em prompts que descrevem erros comuns e o formato correto esperado.
+- A chamada é feita pelo LLM como uma `tool`, por meio de um prompt que fornece o formato correto esperado.
 - Isso evita duplicações e falhas na mesclagem dos dados.
 
 ---
@@ -70,8 +69,9 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 
 **Solução**:
 
-- Divisão dos dados em **batches menores**, garantindo que cada fatia seja processada com atenção aos detalhes e sem ultrapassar limites computacionais.
-- Cada lote é tratado separadamente e mesclado no final.
+- Divisão dos dados em **batches menores**, garantindo que cada fatia caso o DataFrame seja muito grande não ultrapasse o limite de tokens ou por meio da redução do tamanho da batch,
+  os resultados sejam mais precisos.
+- Cada lote muda gradualmente o DataFrame que será mesclado no final.
 
 ---
 
@@ -83,7 +83,7 @@ O sistema automatiza tarefas de pré-processamento de dados, realizando desde a 
 
 - Após a fusão e padronização dos dados, o arquivo `result.xlsx` é convertido em um índice vetorial com embeddings.
 - O modelo **LLaMA 3.3 (llama3-8b-8192)** foi escolhido aqui por sua leveza e eficiência em tarefas de **pergunta-resposta** baseada em contexto recuperado.
-- Utilizamos a arquitetura **Retrieval Augmented Generation (RAG)**: o sistema busca trechos relevantes nos dados vetorizados e passa-os como contexto para o modelo gerar respostas precisas.
+- Aqui o **Retrieval Augmented Generation (RAG)** busca trechos relevantes nos dados vetorizados e passa-os como contexto para o modelo gerar respostas precisas.
 
 ---
 
@@ -123,8 +123,9 @@ git clone https://github.com/FFernandes4280/Desafio_Techlab_2025.git
 cd Desafio_Techlab_2025
 ```
 Crie o arquivo .env com a sua chave da GROQ:
+```bash
 GROQ_API_KEY="SUA_CHAVE_API_DA_GROQ_AQUI"
-
+```
 A estrutura esperada do repositorio será:
 ``` bash
 .
