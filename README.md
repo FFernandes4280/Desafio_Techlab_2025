@@ -145,3 +145,6 @@ Finalmente, execute com:
 ``` bash
 python app.py
 ```
+
+🎥 [Clique aqui para ver o vídeo de demonstração](ExemploDeUso.mp4)
+
